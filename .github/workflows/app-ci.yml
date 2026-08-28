@@ -56,8 +56,10 @@ jobs:
       # toolbox repo): mise cannot install php, so provision it here, gated
       # on the file that says a root needs it rather than on an adapter name.
       - id: has-composer
+        env:
+          ROOT: ${{ matrix.root }}
         run: |
-          if [ -f "${{ matrix.root }}/composer.json" ]; then
+          if [ -f "${ROOT}/composer.json" ]; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
@@ -66,4 +68,6 @@ jobs:
         uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: "8.3"
-      - run: mise run //${{ matrix.root }}:ci-unit
+      - env:
+          ROOT: ${{ matrix.root }}
+        run: mise run "//${ROOT}:ci-unit"

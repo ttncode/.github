@@ -83,11 +83,11 @@ jobs:
     needs: [release-please, image]
     if: ${{ needs.release-please.outputs.released == 'true' && vars.DEPLOY_TARGET != '' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     environment: production
     steps:
       # seam for a future deploy adapter — see docs/decisions/0014 in the
       # scaffold toolbox repo. no target is configured yet, so this job
       # never runs.
-      - run: echo "no deploy adapter is installed for ${{ vars.DEPLOY_TARGET }}" && exit 1
+      - env:
+          DEPLOY_TARGET: ${{ vars.DEPLOY_TARGET }}
+        run: echo "no deploy adapter is installed for ${DEPLOY_TARGET}" && exit 1
