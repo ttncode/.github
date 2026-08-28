@@ -1,0 +1,69 @@
+name: App CI
+on:
+  workflow_call:
+    inputs:
+      roots:
+        description: mise config roots to run ci-unit for, as a JSON array
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      roots: ${{ steps.filter.outputs.changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: build-filters
+        env:
+          ROOTS: ${{ inputs.roots }}
+        # a root is dirty when its own directory, a lockfile, or the root
+        # mise.toml changed. anything else leaves it alone.
+        run: |
+          echo "$ROOTS" \
+            | jq -r '.[] | "\(.):\n  - \(.)/**\n  - mise.toml\n  - \"*.lock*\""' \
+            > "${RUNNER_TEMP}/filters.yml"
+      - id: filter
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: ${{ runner.temp }}/filters.yml
+
+  ci:
+    needs: changes
+    if: ${{ needs.changes.outputs.roots != '[]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      # report every broken root in one run, not just the first
+      fail-fast: false
+      matrix:
+        root: ${{ fromJSON(needs.changes.outputs.roots) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      # the only exception to "ci never learns the stack" (see
+      # docs/decisions/0016-php-is-not-pinned-through-mise.md in the scaffold
+      # toolbox repo): mise cannot install php, so provision it here, gated
+      # on the file that says a root needs it rather than on an adapter name.
+      - id: has-composer
+        run: |
+          if [ -f "${{ matrix.root }}/composer.json" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.has-composer.outputs.present == 'true'
+        uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: "8.3"
+      - run: mise run //${{ matrix.root }}:ci-unit

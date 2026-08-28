@@ -1,0 +1,93 @@
+name: App Release
+on:
+  workflow_call:
+    inputs:
+      image:
+        type: string
+        required: true
+      context:
+        type: string
+        required: true
+
+permissions: {}
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      released: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  image:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ inputs.image }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.version }}
+            type=raw,value=latest
+            type=sha,prefix=sha-
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: ${{ inputs.context }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+
+  assets:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # attaching these means a client always gets a compose file that matches
+      # the image, instead of whatever is on main.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh release upload "$TAG" compose.yaml example.env install.sh --clobber
+
+  deploy:
+    needs: [release-please, image]
+    if: ${{ needs.release-please.outputs.released == 'true' && vars.DEPLOY_TARGET != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment: production
+    steps:
+      # seam for a future deploy adapter — see docs/decisions/0014 in the
+      # scaffold toolbox repo. no target is configured yet, so this job
+      # never runs.
+      - run: echo "no deploy adapter is installed for ${{ vars.DEPLOY_TARGET }}" && exit 1
