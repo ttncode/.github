@@ -18,10 +18,26 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      # CodeQL has no PHP analyser, and its own API requires naming a
+      # language to scan — unlike installing an interpreter, that name
+      # cannot be derived away. gated on the same file-presence shape the
+      # php step in app-ci.yml uses, not on an adapter name, so a
+      # php-only project does not get a job that scans its docs site and
+      # calls that security coverage (docs/decisions/0016-php-is-not-pinned-through-mise.md
+      # in the scaffold toolbox repo, second exception).
+      - id: has-javascript
+        run: |
+          if compgen -G "apps/*/package.json" > /dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.has-javascript.outputs.present == 'true'
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+      - if: steps.has-javascript.outputs.present == 'true'
+        uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
 
   zizmor:
     runs-on: ubuntu-latest
