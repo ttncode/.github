@@ -8,6 +8,11 @@ on:
       context:
         type: string
         required: true
+    secrets:
+      RELEASE_APP_ID:
+        required: false
+      RELEASE_APP_PRIVATE_KEY:
+        required: false
 
 permissions: {}
 
@@ -23,9 +28,27 @@ jobs:
       tag: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.release.outputs.version }}
     steps:
+      # a pull request opened with GITHUB_TOKEN starts no workflow of its own —
+      # github blocks that so a bot cannot trigger itself — so the checks on the
+      # release pull request wait for a human to approve them and go red when
+      # they expire. A github app token makes the pull request come from a real
+      # identity and the checks simply run.
+      #
+      # Optional on purpose: a project that has not set the secrets up still
+      # releases exactly as before, it just needs that click. Read through env
+      # rather than testing `secrets` directly, which is not available to `if`.
+      - id: app-token
+        if: ${{ env.APP_ID != '' }}
+        env:
+          APP_ID: ${{ secrets.RELEASE_APP_ID }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          token: ${{ steps.app-token.outputs.token || github.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
