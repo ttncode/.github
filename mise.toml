@@ -1,0 +1,40 @@
+[tools]
+zizmor = "1.29.0"
+"aqua:rhysd/actionlint" = "1.7.12"
+
+[settings]
+pin = true
+lockfile = true
+
+[tasks.lint]
+description = "audit the reusable workflows every generated project runs"
+run = ["zizmor .github/workflows/", "actionlint"]
+
+# These run in every project this account generates, with contents: write,
+# packages: write and the release app's private key. Until this repository had
+# CI of its own they were only ever checked from the scaffold toolbox's test
+# suite, which skips them whenever a dot-github checkout is not beside it —
+# that is, on every CI run there.
+[tasks.check]
+description = "the invariants a generated project depends on"
+run = [
+  """
+  unpinned="$(grep -rhoE 'uses: [^ ]+@[^ ]+' .github/workflows/ | grep -vE '@[0-9a-f]{40}$' || true)"
+  [ -z "$unpinned" ] || { printf 'actions not pinned to a sha:\\n%s\\n' "$unpinned" >&2; exit 1; }
+  """,
+  """
+  checkouts="$(grep -c 'actions/checkout@' .github/workflows/*.yml | awk -F: '{s+=$2} END {print s}')"
+  persist="$(grep -c 'persist-credentials: false' .github/workflows/*.yml | awk -F: '{s+=$2} END {print s}')"
+  [ "$checkouts" = "$persist" ] || {
+    printf '%s checkouts but %s persist-credentials: false\\n' "$checkouts" "$persist" >&2; exit 1; }
+  """,
+  """
+  for wf in .github/workflows/*.yml; do
+    grep -q '^permissions: {}' "$wf" \\
+      || { printf '%s does not start from a closed permission set\\n' "$wf" >&2; exit 1; }
+  done
+  """,
+]
+
+[tasks.ci]
+run = [{ task = "lint" }, { task = "check" }]

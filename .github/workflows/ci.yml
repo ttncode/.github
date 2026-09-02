@@ -1,0 +1,27 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions: {}
+
+# The workflows in this repository run inside every project the scaffold
+# toolbox generates, with contents: write, packages: write and the release
+# app's private key. Until this file existed they were checked only from that
+# toolbox's own test suite, which skips those tests whenever a dot-github
+# checkout is not sitting beside it — so on its CI they never ran at all.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+      - run: mise run ci

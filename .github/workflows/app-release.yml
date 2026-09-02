@@ -45,6 +45,12 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          # Without these the token carries every permission the app was
+          # installed with, in every repository the app can reach. Release
+          # Please needs exactly two: the release commit and tag, and the
+          # pull request it opens.
+          permission-contents: write
+          permission-pull-requests: write
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
