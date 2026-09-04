@@ -32,23 +32,47 @@ jobs:
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
           fi
+      # SARIF upload needs GitHub Advanced Security, which a private repository
+      # does not have — uploading there fails the job on a 403 for a reason
+      # that has nothing to do with the code. `private` isn't in the event
+      # payload for a schedule trigger, so it's read from the API instead of
+      # `github.event.repository.private`, which that trigger leaves empty.
+      - id: visibility
+        if: steps.has-javascript.outputs.present == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "private=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .private)" >> "$GITHUB_OUTPUT"
       - if: steps.has-javascript.outputs.present == 'true'
         uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           languages: ${{ matrix.language }}
+      # upload: never keeps the database build and query run but skips the
+      # call a private repo gets rejected for. CodeQL only fails a build
+      # through that upload (there is no local pass/fail), so a private repo
+      # gets the scan with no signal from it — accepted, not solved.
       - if: steps.has-javascript.outputs.present == 'true'
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          upload: ${{ steps.visibility.outputs.private == 'true' && 'never' || 'always' }}
 
   zizmor:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # advanced-security uploads SARIF to code scanning, which a private repo
+      # rejects with a 403 (no Advanced Security license). annotations gets the
+      # same findings onto the run as workflow annotations instead — zizmor's
+      # own exit code still fails the job on a real finding either way, so
+      # this trades the Security tab for something that works on both
+      # visibilities without needing to detect which one this is.
       - uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: "false"
+          annotations: "true"
 
   gitleaks:
     runs-on: ubuntu-latest
