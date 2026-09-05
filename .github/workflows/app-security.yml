@@ -10,6 +10,12 @@ jobs:
     permissions:
       contents: read
       security-events: write
+      # the codeql action looks its own workflow run up through the api before
+      # it does anything else, and on a private repository that call is
+      # rejected without this — a 403 on get-a-workflow-run, several steps
+      # before any analysis, unrelated to the sarif upload the job already
+      # skips there (github/codeql-action#2117).
+      actions: read
     strategy:
       fail-fast: false
       matrix:
