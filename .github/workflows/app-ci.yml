@@ -16,12 +16,22 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      roots: ${{ steps.filter.outputs.changes }}
+      # the filter only runs on a pull request, so on every other event this
+      # falls back to the full input: a push to the default branch is exactly
+      # where every root should be verified, not a subset. that also keeps
+      # paths-filter away from `git`, which it needs on a push (it diffs
+      # against github.event.before, a commit a depth-1 checkout does not
+      # have) and cannot use, because the checkout persists no credential
+      # for it to fetch that commit with on a private repository.
+      roots: ${{ steps.filter.outputs.changes || inputs.roots }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: build-filters
+      # the filter is a pull-request time saver: most roots are untouched
+      # there. on any other event the job outputs inputs.roots unchanged.
+      - if: github.event_name == 'pull_request'
+        id: build-filters
         env:
           ROOTS: ${{ inputs.roots }}
         # a root is dirty when its own directory, a lockfile, or the root
@@ -30,7 +40,8 @@ jobs:
           echo "$ROOTS" \
             | jq -r '.[] | "\(.):\n  - \(.)/**\n  - mise.toml\n  - \"*.lock*\""' \
             > "${RUNNER_TEMP}/filters.yml"
-      - id: filter
+      - if: github.event_name == 'pull_request'
+        id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         with:
           filters: ${{ runner.temp }}/filters.yml
