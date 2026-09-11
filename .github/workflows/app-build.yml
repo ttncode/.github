@@ -2,26 +2,51 @@ name: App Build
 on:
   workflow_call:
     inputs:
-      image:
-        description: the ghcr repository, without a tag
+      images:
+        description: JSON array of {image, context, dockerfile}, one per application
         type: string
-        required: true
+        required: false
+        default: ""
+      image:
+        description: the ghcr repository, without a tag — the single-target form
+        type: string
+        required: false
+        default: ""
       context:
         type: string
-        required: true
+        required: false
+        default: ""
       dockerfile:
         description: path to the Dockerfile, relative to the checkout root
         type: string
-        required: true
+        required: false
+        default: ""
 
 permissions: {}
 
 jobs:
+  targets:
+    uses: ./.github/workflows/app-targets.yml
+    with:
+      images: ${{ inputs.images }}
+      image: ${{ inputs.image }}
+      context: ${{ inputs.context }}
+      dockerfile: ${{ inputs.dockerfile }}
+
   build:
+    needs: targets
+    # An empty matrix is a project with no application yet, not a failure.
+    if: ${{ needs.targets.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    strategy:
+      # One broken application must not hide the state of the others — the
+      # same reason the scaffold toolbox's own adapter matrix sets this.
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.targets.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,15 +60,17 @@ jobs:
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ${{ inputs.image }}
+          images: ${{ matrix.target.image }}
           tags: |
             type=raw,value=main,enable={{is_default_branch}}
             type=sha,prefix=sha-
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
-          context: ${{ inputs.context }}
-          file: ${{ inputs.dockerfile }}
+          context: ${{ matrix.target.context }}
+          file: ${{ matrix.target.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Scoped per image, so two applications built in the same run do not
+          # evict each other's layers out of one shared cache key.
+          cache-from: type=gha,scope=${{ matrix.target.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target.image }}
