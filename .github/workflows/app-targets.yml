@@ -1,0 +1,79 @@
+name: App Targets
+# Resolves the set of images a project publishes into one matrix, so
+# app-build.yml and app-release.yml agree on it by construction rather than by
+# two copies of the same shell.
+#
+# Two input shapes, because a project generated before this existed still
+# calls `v1` and must keep working: `images` is the JSON array a multi-app
+# project passes, and `image`/`context`/`dockerfile` is the single target
+# every project passed until now. Exactly one has to be given.
+on:
+  workflow_call:
+    inputs:
+      images:
+        description: JSON array of {image, context, dockerfile}, one per application
+        type: string
+        required: false
+        default: ""
+      image:
+        description: the ghcr repository, without a tag — the single-target form
+        type: string
+        required: false
+        default: ""
+      context:
+        type: string
+        required: false
+        default: ""
+      dockerfile:
+        description: path to the Dockerfile, relative to the checkout root
+        type: string
+        required: false
+        default: ""
+    outputs:
+      matrix:
+        description: JSON array of {image, context, dockerfile}
+        value: ${{ jobs.resolve.outputs.matrix }}
+
+permissions: {}
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    permissions: {}
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - id: matrix
+        env:
+          IMAGES: ${{ inputs.images }}
+          IMAGE: ${{ inputs.image }}
+          CONTEXT: ${{ inputs.context }}
+          DOCKERFILE: ${{ inputs.dockerfile }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "$IMAGES" ] && [ -n "$IMAGE" ]; then
+            echo "pass either images or image, not both" >&2
+            exit 1
+          fi
+
+          if [ -n "$IMAGES" ]; then
+            # Validated here rather than left to fail inside `fromJson` in a
+            # strategy block, where the error names the expression and not the
+            # input that produced it.
+            value="$(jq -ce 'if type != "array" or length == 0 then error("images must be a non-empty array") else map(
+              if has("image") and has("context") and has("dockerfile") then .
+              else error("each entry needs image, context and dockerfile")
+              end) end' <<<"$IMAGES")"
+          elif [ -n "$IMAGE" ]; then
+            value="$(jq -cn --arg image "$IMAGE" --arg context "$CONTEXT" \
+              --arg dockerfile "$DOCKERFILE" \
+              '[{image: $image, context: $context, dockerfile: $dockerfile}]')"
+          else
+            echo "no image to build: pass images, or image with context and dockerfile" >&2
+            exit 1
+          fi
+
+          echo "value=${value}" >> "$GITHUB_OUTPUT"
+          jq . <<<"$value"
