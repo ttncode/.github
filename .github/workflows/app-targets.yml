@@ -62,7 +62,13 @@ jobs:
             # Validated here rather than left to fail inside `fromJson` in a
             # strategy block, where the error names the expression and not the
             # input that produced it.
-            value="$(jq -ce 'if type != "array" or length == 0 then error("images must be a non-empty array") else map(
+            #
+            # An empty array is valid and means "this project has no
+            # application yet" — `scaffold new demo` with no adapter generates
+            # exactly that, and its Build workflow must stay green rather than
+            # fail on every push until somebody adds one. The caller skips the
+            # build job when the matrix comes back empty.
+            value="$(jq -ce 'if type != "array" then error("images must be an array") else map(
               if has("image") and has("context") and has("dockerfile") then .
               else error("each entry needs image, context and dockerfile")
               end) end' <<<"$IMAGES")"

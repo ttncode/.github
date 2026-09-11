@@ -81,7 +81,8 @@ jobs:
 
   image:
     needs: [release-please, targets]
-    if: ${{ needs.release-please.outputs.released == 'true' }}
+    # An empty matrix is a project with no application yet, not a failure.
+    if: ${{ needs.release-please.outputs.released == 'true' && needs.targets.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

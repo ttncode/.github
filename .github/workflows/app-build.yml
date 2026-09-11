@@ -35,6 +35,8 @@ jobs:
 
   build:
     needs: targets
+    # An empty matrix is a project with no application yet, not a failure.
+    if: ${{ needs.targets.outputs.matrix != '[]' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
